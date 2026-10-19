@@ -23,11 +23,76 @@ type MetadataStore interface {
 	Put(contractID string, m Metadata, t time.Time)
 }
 
-// Worker orchestrates contract metadata background refresh.
-type Worker struct{}
+// Defaults applied by NewWorker. They are exported so callers and tests can
+// refer to them instead of duplicating magic numbers.
+const (
+	// DefaultRefreshInterval is how often the worker re-reads token metadata.
+	DefaultRefreshInterval = 5 * time.Minute
 
+	// DefaultBatchSize is how many contracts are refreshed per pass.
+	DefaultBatchSize = 50
+
+	// DefaultFetchTimeout bounds a single RPC metadata call.
+	DefaultFetchTimeout = 10 * time.Second
+)
+
+// Options overrides the worker defaults. A zero value keeps the default, so
+// callers only set what they care about.
+type Options struct {
+	Interval     time.Duration
+	BatchSize    int
+	FetchTimeout time.Duration
+}
+
+// Worker orchestrates contract metadata background refresh.
+type Worker struct {
+	interval     time.Duration
+	batchSize    int
+	fetchTimeout time.Duration
+}
+
+// NewWorker returns a worker with the package defaults applied.
 func NewWorker() *Worker {
-	return &Worker{}
+	return NewWorkerWithOptions(Options{})
+}
+
+// NewWorkerWithOptions returns a worker, replacing defaults only where the
+// caller supplied a positive value. Validation stays here rather than in every
+// caller: a zero or negative field is far more likely to be an unset option
+// than a deliberate "no interval at all".
+func NewWorkerWithOptions(opts Options) *Worker {
+	w := &Worker{
+		interval:     DefaultRefreshInterval,
+		batchSize:    DefaultBatchSize,
+		fetchTimeout: DefaultFetchTimeout,
+	}
+
+	if opts.Interval > 0 {
+		w.interval = opts.Interval
+	}
+	if opts.BatchSize > 0 {
+		w.batchSize = opts.BatchSize
+	}
+	if opts.FetchTimeout > 0 {
+		w.fetchTimeout = opts.FetchTimeout
+	}
+
+	return w
+}
+
+// Interval reports how often the worker refreshes metadata.
+func (w *Worker) Interval() time.Duration {
+	return w.interval
+}
+
+// BatchSize reports how many contracts one pass covers.
+func (w *Worker) BatchSize() int {
+	return w.batchSize
+}
+
+// FetchTimeout reports the per-call RPC timeout.
+func (w *Worker) FetchTimeout() time.Duration {
+	return w.fetchTimeout
 }
 
 // ResolveMetadata resolves contract metadata with caching and interval checks.
